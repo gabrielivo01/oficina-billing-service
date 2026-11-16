@@ -80,12 +80,16 @@ reinicializações e upgrades do StatefulSet.
 
 ## Qualidade e demonstração
 
-- CI: testes unitários/mockados, ArchUnit, Spotless, JaCoCo e análise SonarCloud; nenhum teste de
-  integração/contêiner é selecionado.
-- Fluxo de demonstração e collection Postman: [documentação da Fase 4 no OS Service](../oficina/README.md#demonstração-e-qualidade).
+- CI (`ci.yml`): `./mvnw verify` (unitários, contrato, WireMock do Mercado Pago, contexto, ArchUnit, Spotless,
+  JaCoCo ≥ 80%), SonarCloud com Quality Gate e testes de integração (`./mvnw verify -Pintegracao`) num job separado.
+- CD (`cd.yml`): imagem no GHCR, deploy dos 3 serviços num cluster kind e smoke test E2E da Saga.
+- Branch `main` protegida: merge só por pull request com o CI verde.
+- Fluxo de demonstração e collection Postman: [documentação da Fase 4 no OS Service](https://github.com/gabrielivo01/Oficina#demonstração-e-qualidade).
 
 ## Testes
 
-Os testes unitários de domínio e os testes Mockito não iniciam MongoDB, RabbitMQ, SMTP, containers ou
-serviços externos. Execute os alvos unitários direcionados com `./mvnw -Dtest='OrcamentoTest,CobrancaTest' test`.
-O POM mantém JaCoCo em 80%; `verify` não é necessário para validação local de baixo custo.
+- `./mvnw verify`: unitários de domínio e serviços (Mockito), contrato com os exemplos do catálogo
+  (`ContratosMensagensTest`), adapter do Mercado Pago contra WireMock em HTTPS (sem chamar o sandbox), filtro JWT,
+  listener, contexto Spring sem MongoDB/RabbitMQ, ArchUnit, Spotless e JaCoCo ≥ 80%. Não exige Docker.
+- `./mvnw verify -Pintegracao`: testes `*IT` com Testcontainers (Docker obrigatório), também rodados no CI.
+- Um alvo específico: `./mvnw -Dtest='OrcamentoTest,CobrancaTest' test`.
