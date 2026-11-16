@@ -61,12 +61,12 @@ spec:
             - name: MONGO_INITDB_ROOT_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: oficina-billing-service
+                  name: oficina-billing-mongodb
                   key: MONGO_ROOT_USERNAME
             - name: MONGO_INITDB_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: oficina-billing-service
+                  name: oficina-billing-mongodb
                   key: MONGO_ROOT_PASSWORD
           lifecycle:
             postStart:
