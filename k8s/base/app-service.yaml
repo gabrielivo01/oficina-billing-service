@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: oficina-billing-service
+  namespace: oficina
+  labels:
+    app: oficina-billing-service
+spec:
+  selector:
+    app: oficina-billing-service
+  ports:
+    - name: http
+      port: 8082
+      targetPort: http

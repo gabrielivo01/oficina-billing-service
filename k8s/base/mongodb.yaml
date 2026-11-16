@@ -1,0 +1,136 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: oficina-billing-mongodb-headless
+  namespace: oficina
+spec:
+  clusterIP: None
+  selector:
+    app: oficina-billing-mongodb
+  ports:
+    - name: mongodb
+      port: 27017
+      targetPort: mongodb
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: oficina-billing-mongodb
+  namespace: oficina
+spec:
+  serviceName: oficina-billing-mongodb-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: oficina-billing-mongodb
+  template:
+    metadata:
+      labels:
+        app: oficina-billing-mongodb
+    spec:
+      terminationGracePeriodSeconds: 60
+      initContainers:
+        - name: preparar-keyfile
+          image: mongo:8.0
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              printf '%s' "$MONGO_REPLICA_KEY" > /keyfile/keyfile
+              chown 999:999 /keyfile/keyfile
+              chmod 0400 /keyfile/keyfile
+          env:
+            - name: MONGO_REPLICA_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: oficina-billing-mongodb
+                  key: MONGO_REPLICA_KEY
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: keyfile
+              mountPath: /keyfile
+      containers:
+        - name: mongodb
+          image: mongo:8.0
+          args: ["--bind_ip_all", "--replSet", "rs0", "--keyFile", "/etc/mongo-keyfile/keyfile"]
+          ports:
+            - name: mongodb
+              containerPort: 27017
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: oficina-billing-service
+                  key: MONGO_ROOT_USERNAME
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: oficina-billing-service
+                  key: MONGO_ROOT_PASSWORD
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -ec
+                  - |
+                    until mongosh --quiet --username "$MONGO_INITDB_ROOT_USERNAME" --password "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval 'db.adminCommand("ping").ok' admin >/dev/null; do
+                      sleep 2
+                    done
+                    mongosh --quiet --username "$MONGO_INITDB_ROOT_USERNAME" --password "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval '
+                      if (!db.hello().setName) {
+                        rs.initiate({
+                          _id: "rs0",
+                          members: [{ _id: 0, host: "oficina-billing-mongodb-0.oficina-billing-mongodb-headless.oficina.svc.cluster.local:27017" }]
+                        });
+                      }
+                    ' admin
+          startupProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - mongosh --quiet --username "$MONGO_INITDB_ROOT_USERNAME" --password "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval 'db.hello().isWritablePrimary === true' admin
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - mongosh --quiet --username "$MONGO_INITDB_ROOT_USERNAME" --password "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval 'db.hello().isWritablePrimary === true' admin
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - mongosh --quiet --username "$MONGO_INITDB_ROOT_USERNAME" --password "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval 'db.adminCommand("ping").ok' admin
+            periodSeconds: 20
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+            - name: keyfile
+              mountPath: /etc/mongo-keyfile
+              readOnly: true
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: keyfile
+          emptyDir:
+            medium: Memory
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi

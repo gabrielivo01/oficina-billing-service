@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oficina-billing-service
+  namespace: oficina
+  labels:
+    app: oficina-billing-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: oficina-billing-service
+  template:
+    metadata:
+      labels:
+        app: oficina-billing-service
+    spec:
+      containers:
+        - name: app
+          image: ghcr.io/gabrielivo01/oficina-billing-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8082
+          envFrom:
+            - configMapRef:
+                name: oficina-billing-service
+            - secretRef:
+                name: oficina-billing-service
+          env:
+            - name: MONGO_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: oficina-billing-mongodb
+                  key: MONGO_ROOT_USERNAME
+            - name: MONGO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: oficina-billing-mongodb
+                  key: MONGO_ROOT_PASSWORD
+            - name: SPRING_DATA_MONGODB_URI
+              value: "mongodb://$(MONGO_ROOT_USERNAME):$(MONGO_ROOT_PASSWORD)@oficina-billing-mongodb-0.oficina-billing-mongodb-headless.oficina.svc.cluster.local:27017/billing_db?authSource=admin&replicaSet=rs0"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
